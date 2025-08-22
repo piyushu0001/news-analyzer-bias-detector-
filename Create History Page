@@ -1,0 +1,354 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Article } from "@/entities/Article";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { History, Search, Filter, Trash2, ExternalLink, AlertTriangle, CheckCircle, Calendar, Eye } from "lucide-react";
+import { format } from "date-fns";
+import { useToast } from "@/components/ui/use-toast";
+import useAppLevelAuth from "@/hooks/useAppLevelAuth";
+
+export default function HistoryPage() {
+  const { isLoggedIn } = useAppLevelAuth();
+  const { toast } = useToast();
+  const [articles, setArticles] = useState<any[]>([]);
+  const [filteredArticles, setFilteredArticles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [biasFilter, setBiasFilter] = useState("all");
+  const [selectedArticle, setSelectedArticle] = useState<any>(null);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    loadArticles();
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    filterArticles();
+  }, [articles, searchTerm, biasFilter]);
+
+  const loadArticles = async () => {
+    try {
+      setLoading(true);
+      const data = await Article.list("createdAt:desc", 1000);
+      setArticles(data);
+    } catch (error) {
+      console.error('Error loading articles:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load analysis history.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filterArticles = () => {
+    let filtered = articles;
+
+    // Search filter
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter(article =>
+        article.title.toLowerCase().includes(search) ||
+        article.source?.toLowerCase().includes(search) ||
+        article.summary?.toLowerCase().includes(search)
+      );
+    }
+
+    // Bias filter
+    if (biasFilter !== "all") {
+      filtered = filtered.filter(article => article.biasLevel === biasFilter);
+    }
+
+    setFilteredArticles(filtered);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await Article.delete(id);
+      setArticles(articles.filter(article => article.id !== id));
+      toast({
+        title: "Success",
+        description: "Analysis deleted successfully.",
+      });
+    } catch (error) {
+      console.error('Error deleting article:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete analysis.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const getBiasIcon = (level: string) => {
+    switch (level) {
+      case 'none':
+        return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'mild':
+        return <AlertTriangle className="h-4 w-4 text-yellow-600" />;
+      case 'strong':
+        return <AlertTriangle className="h-4 w-4 text-red-600" />;
+      default:
+        return <CheckCircle className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const getBiasColor = (level: string) => {
+    switch (level) {
+      case 'none':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'mild':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'strong':
+        return 'bg-red-100 text-red-800 border-red-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  if (!isLoggedIn) return null;
+
+  if (loading) {
+    return (
+      <div className="space-y-6 pt-4 md:pt-0">
+        <div className="flex items-center gap-3">
+          <History className="h-6 w-6 text-blue-600" />
+          <h1 className="text-3xl font-bold text-slate-800">Analysis History</h1>
+        </div>
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-32 bg-slate-100 rounded-lg animate-pulse"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 md:space-y-8 w-full max-w-full overflow-hidden pt-4 md:pt-0">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <History className="h-6 w-6 text-blue-600" />
+        <h1 className="text-3xl font-bold text-slate-800">Analysis History</h1>
+      </div>
+
+      {/* Filters */}
+      <Card className="bg-white border border-slate-200 shadow-sm">
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+              <Input
+                placeholder="Search articles by title, source, or content..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={biasFilter} onValueChange={setBiasFilter}>
+              <SelectTrigger className="w-full sm:w-48">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Filter by bias" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Bias Levels</SelectItem>
+                <SelectItem value="none">No Bias</SelectItem>
+                <SelectItem value="mild">Mild Bias</SelectItem>
+                <SelectItem value="strong">Strong Bias</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Results */}
+      <div className="space-y-4">
+        {filteredArticles.length === 0 ? (
+          <Card className="bg-white border border-slate-200 shadow-sm">
+            <CardContent className="p-12 text-center">
+              <Search className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-800 mb-2">
+                {articles.length === 0 ? "No analyses yet" : "No results found"}
+              </h3>
+              <p className="text-slate-600">
+                {articles.length === 0 
+                  ? "Start by analyzing your first news article" 
+                  : "Try adjusting your search terms or filters"}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          filteredArticles.map((article) => (
+            <Card key={article.id} className="bg-white border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-slate-800 mb-2 line-clamp-2">
+                          {article.title}
+                        </h3>
+                        <div className="flex items-center gap-3 text-sm text-slate-500 mb-3">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {format(new Date(article.analysisDate), "MMM d, yyyy")}
+                          </div>
+                          {article.source && (
+                            <>
+                              <span>•</span>
+                              <span>{article.source}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <Badge className={`gap-1 ${getBiasColor(article.biasLevel)} border shrink-0`}>
+                        {getBiasIcon(article.biasLevel)}
+                        {article.biasLevel === 'none' ? 'No Bias' : 
+                         article.biasLevel === 'mild' ? 'Mild Bias' : 'Strong Bias'}
+                      </Badge>
+                    </div>
+
+                    <p className="text-sm text-slate-600 mb-4 line-clamp-3">
+                      {article.summary}
+                    </p>
+
+                    {article.biasTypes && article.biasTypes.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {article.biasTypes.map((type: string, index: number) => (
+                          <Badge key={index} variant="outline" className="text-xs capitalize">
+                            {type}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedArticle(article)}
+                        className="gap-2"
+                      >
+                        <Eye className="h-4 w-4" />
+                        View Analysis
+                      </Button>
+                      {article.url && (
+                        <a
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Original Article
+                        </a>
+                      )}
+                      <div className="flex-1" />
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Analysis</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete this analysis? This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDelete(article.id)}
+                              className="bg-red-600 hover:bg-red-700"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* Article Detail Modal */}
+      {selectedArticle && (
+        <AlertDialog open={!!selectedArticle} onOpenChange={() => setSelectedArticle(null)}>
+          <AlertDialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-xl font-bold text-slate-800 pr-8">
+                {selectedArticle.title}
+              </AlertDialogTitle>
+              <div className="flex items-center gap-3 text-sm text-slate-500">
+                <span>{format(new Date(selectedArticle.analysisDate), "MMM d, yyyy 'at' h:mm a")}</span>
+                {selectedArticle.source && (
+                  <>
+                    <span>•</span>
+                    <span>{selectedArticle.source}</span>
+                  </>
+                )}
+              </div>
+            </AlertDialogHeader>
+            <div className="space-y-6 py-4">
+              {/* Bias Assessment */}
+              <div className="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="flex items-center gap-3">
+                  {getBiasIcon(selectedArticle.biasLevel)}
+                  <div>
+                    <h3 className="font-semibold text-slate-800">Bias Assessment</h3>
+                    <p className="text-sm text-slate-600">Overall bias detection result</p>
+                  </div>
+                </div>
+                <Badge className={`gap-2 ${getBiasColor(selectedArticle.biasLevel)} border font-semibold`}>
+                  {selectedArticle.biasLevel === 'none' ? 'No Bias Detected' : 
+                   selectedArticle.biasLevel === 'mild' ? 'Mild Bias' : 'Strong Bias'}
+                </Badge>
+              </div>
+
+              {/* Summary */}
+              <div>
+                <h3 className="font-semibold text-slate-800 mb-3">Summary</h3>
+                <p className="text-slate-700 leading-relaxed bg-blue-50 p-4 rounded-lg border border-blue-100">
+                  {selectedArticle.summary}
+                </p>
+              </div>
+
+              {/* Bias Analysis */}
+              <div>
+                <h3 className="font-semibold text-slate-800 mb-3">Bias Analysis</h3>
+                <p className="text-slate-700 leading-relaxed bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+                  {selectedArticle.biasExplanation}
+                </p>
+              </div>
+
+              {/* Alternative Perspectives */}
+              <div>
+                <h3 className="font-semibold text-slate-800 mb-3">Alternative Perspectives</h3>
+                <p className="text-slate-700 leading-relaxed bg-purple-50 p-4 rounded-lg border border-purple-100">
+                  {selectedArticle.alternativePerspectives}
+                </p>
+              </div>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Close</AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </div>
+  );
+}
