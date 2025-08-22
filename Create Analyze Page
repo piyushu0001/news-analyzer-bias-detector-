@@ -1,0 +1,391 @@
+"use client";
+
+import { useState } from "react";
+import { Article } from "@/entities/Article";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Search, Loader2, AlertTriangle, CheckCircle, Eye, ExternalLink, BookOpen, Users, Lightbulb } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { InvokeLLM } from "@/integrations/Core";
+import useAppLevelAuth from "@/hooks/useAppLevelAuth";
+
+export default function Analyze() {
+  const { isLoggedIn } = useAppLevelAuth();
+  const { toast } = useToast();
+  const [formData, setFormData] = useState({
+    title: "",
+    content: "",
+    url: "",
+    source: "",
+    publishedDate: ""
+  });
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const handleAnalyze = async () => {
+    if (!formData.title.trim() || !formData.content.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide both article title and content.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const prompt = `
+You are an AI system that reads news articles and provides both a summary and an analysis of bias.
+When given a news article (title + body), follow these steps:
+
+1. Summary (Neutral, Objective):
+- Condense the article into 3–5 sentences.
+- Keep the tone neutral and factual.
+- Highlight the main events, actors, and outcomes.
+
+2. Bias Detection:
+- Identify if the article shows any bias (political, emotional, cultural, or framing).
+- Explain how the language, word choice, or selective emphasis might reflect bias.
+- Label the bias level as: None (Objective), Mild Bias (Slight slant in wording/perspective), Strong Bias (Clear political/emotional leanings)
+
+3. Perspective Check:
+- Suggest how the same event might be reported from an opposite or alternative viewpoint.
+- Point out missing perspectives or stakeholders not represented.
+
+Article Title: ${formData.title}
+
+Article Content: ${formData.content}
+
+Please analyze this article and provide your response in the following JSON format:
+{
+  "summary": "3-5 sentence neutral summary",
+  "biasLevel": "none" | "mild" | "strong",
+  "biasTypes": ["political", "emotional", "cultural", "framing"] (array of detected bias types),
+  "biasExplanation": "Detailed explanation of detected bias and language analysis",
+  "alternativePerspectives": "How this might be reported differently and missing perspectives",
+  "keyActors": ["actor1", "actor2"] (main people/organizations mentioned)
+}
+      `;
+
+      const response = await InvokeLLM({
+        prompt,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            biasLevel: { type: "string", enum: ["none", "mild", "strong"] },
+            biasTypes: { type: "array", items: { type: "string" } },
+            biasExplanation: { type: "string" },
+            alternativePerspectives: { type: "string" },
+            keyActors: { type: "array", items: { type: "string" } }
+          },
+          required: ["summary", "biasLevel", "biasExplanation", "alternativePerspectives"]
+        }
+      });
+
+      const analysisData = {
+        ...formData,
+        ...response,
+        analysisDate: new Date().toISOString()
+      };
+
+      // Save to database
+      const savedArticle = await Article.create(analysisData);
+      setAnalysis(savedArticle);
+
+      toast({
+        title: "Analysis Complete",
+        description: "Article has been analyzed and saved to your history.",
+      });
+
+    } catch (error) {
+      console.error('Error analyzing article:', error);
+      toast({
+        title: "Analysis Failed",
+        description: "Failed to analyze the article. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleReset = () => {
+    setFormData({
+      title: "",
+      content: "",
+      url: "",
+      source: "",
+      publishedDate: ""
+    });
+    setAnalysis(null);
+  };
+
+  const getBiasIcon = (level: string) => {
+    switch (level) {
+      case 'none':
+        return <CheckCircle className="h-5 w-5 text-green-600" />;
+      case 'mild':
+        return <AlertTriangle className="h-5 w-5 text-yellow-600" />;
+      case 'strong':
+        return <AlertTriangle className="h-5 w-5 text-red-600" />;
+      default:
+        return <CheckCircle className="h-5 w-5 text-gray-600" />;
+    }
+  };
+
+  const getBiasColor = (level: string) => {
+    switch (level) {
+      case 'none':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'mild':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'strong':
+        return 'bg-red-100 text-red-800 border-red-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  if (!isLoggedIn) return null;
+
+  return (
+    <div className="space-y-6 md:space-y-8 w-full max-w-full overflow-hidden pt-4 md:pt-0">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Search className="h-6 w-6 text-blue-600" />
+        <h1 className="text-3xl font-bold text-slate-800">Analyze Article</h1>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Input Form */}
+        <Card className="bg-white border border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+              <BookOpen className="h-5 w-5 text-blue-600" />
+              Article Input
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="title" className="text-sm font-medium">Article Title *</Label>
+              <Input
+                id="title"
+                value={formData.title}
+                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                placeholder="Enter the article title"
+                className="text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="source" className="text-sm font-medium">Source</Label>
+                <Input
+                  id="source"
+                  value={formData.source}
+                  onChange={(e) => setFormData({...formData, source: e.target.value})}
+                  placeholder="e.g., CNN, BBC, Reuters"
+                  className="text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="publishedDate" className="text-sm font-medium">Published Date</Label>
+                <Input
+                  id="publishedDate"
+                  type="date"
+                  value={formData.publishedDate}
+                  onChange={(e) => setFormData({...formData, publishedDate: e.target.value})}
+                  className="text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="url" className="text-sm font-medium">Article URL</Label>
+              <Input
+                id="url"
+                value={formData.url}
+                onChange={(e) => setFormData({...formData, url: e.target.value})}
+                placeholder="https://example.com/article"
+                className="text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="content" className="text-sm font-medium">Article Content *</Label>
+              <Textarea
+                id="content"
+                value={formData.content}
+                onChange={(e) => setFormData({...formData, content: e.target.value})}
+                placeholder="Paste the full article content here..."
+                rows={12}
+                className="text-sm resize-none"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={handleAnalyze}
+                disabled={isAnalyzing || !formData.title.trim() || !formData.content.trim()}
+                className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4" />
+                    Analyze Article
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={handleReset}
+                variant="outline"
+                disabled={isAnalyzing}
+                className="px-6"
+              >
+                Reset
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Analysis Results */}
+        <Card className="bg-white border border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+              <Eye className="h-5 w-5 text-blue-600" />
+              Analysis Results
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!analysis ? (
+              <div className="text-center py-12">
+                <Search className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-slate-800 mb-2">Ready to Analyze</h3>
+                <p className="text-slate-600">Enter an article and click "Analyze Article" to get started</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Bias Level */}
+                <div className="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="flex items-center gap-3">
+                    {getBiasIcon(analysis.biasLevel)}
+                    <div>
+                      <h3 className="font-semibold text-slate-800">Bias Assessment</h3>
+                      <p className="text-sm text-slate-600">Overall bias detection result</p>
+                    </div>
+                  </div>
+                  <Badge className={`gap-2 ${getBiasColor(analysis.biasLevel)} border font-semibold`}>
+                    {analysis.biasLevel === 'none' ? 'No Bias Detected' : 
+                     analysis.biasLevel === 'mild' ? 'Mild Bias' : 'Strong Bias'}
+                  </Badge>
+                </div>
+
+                {/* Bias Types */}
+                {analysis.biasTypes && analysis.biasTypes.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-slate-800 mb-3">Detected Bias Types</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {analysis.biasTypes.map((type: string, index: number) => (
+                        <Badge key={index} variant="outline" className="capitalize">
+                          {type}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Summary */}
+                <div>
+                  <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-blue-600" />
+                    Neutral Summary
+                  </h3>
+                  <p className="text-slate-700 leading-relaxed bg-blue-50 p-4 rounded-lg border border-blue-100">
+                    {analysis.summary}
+                  </p>
+                </div>
+
+                <Separator />
+
+                {/* Bias Explanation */}
+                <div>
+                  <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                    Bias Analysis
+                  </h3>
+                  <p className="text-slate-700 leading-relaxed bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+                    {analysis.biasExplanation}
+                  </p>
+                </div>
+
+                <Separator />
+
+                {/* Alternative Perspectives */}
+                <div>
+                  <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-purple-600" />
+                    Alternative Perspectives
+                  </h3>
+                  <p className="text-slate-700 leading-relaxed bg-purple-50 p-4 rounded-lg border border-purple-100">
+                    {analysis.alternativePerspectives}
+                  </p>
+                </div>
+
+                {/* Key Actors */}
+                {analysis.keyActors && analysis.keyActors.length > 0 && (
+                  <>
+                    <Separator />
+                    <div>
+                      <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                        <Users className="h-4 w-4 text-green-600" />
+                        Key Actors
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {analysis.keyActors.map((actor: string, index: number) => (
+                          <Badge key={index} variant="secondary" className="bg-green-100 text-green-800 border-green-200">
+                            {actor}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Article Link */}
+                {analysis.url && (
+                  <>
+                    <Separator />
+                    <div>
+                      <a
+                        href={analysis.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        View Original Article
+                      </a>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
