@@ -1,0 +1,76 @@
+{
+  "name": "Article",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Article title"
+    },
+    "content": {
+      "type": "string",
+      "description": "Full article content"
+    },
+    "url": {
+      "type": "string",
+      "description": "Original article URL (if provided)"
+    },
+    "source": {
+      "type": "string",
+      "description": "News source or publication"
+    },
+    "publishedDate": {
+      "type": "string",
+      "format": "date",
+      "description": "Article publication date"
+    },
+    "summary": {
+      "type": "string",
+      "description": "AI-generated neutral summary"
+    },
+    "biasLevel": {
+      "type": "string",
+      "enum": ["none", "mild", "strong"],
+      "description": "Detected bias level"
+    },
+    "biasTypes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Types of bias detected (political, emotional, cultural, framing)"
+    },
+    "biasExplanation": {
+      "type": "string",
+      "description": "Detailed explanation of detected bias"
+    },
+    "alternativePerspectives": {
+      "type": "string",
+      "description": "Suggested alternative viewpoints and missing perspectives"
+    },
+    "keyActors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Main actors/stakeholders mentioned in the article"
+    },
+    "analysisDate": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the analysis was performed"
+    }
+  },
+  "required": [
+    "title",
+    "content",
+    "summary",
+    "biasLevel",
+    "analysisDate"
+  ],
+  "x-accessControl": {
+    "permissions": {
+      "read": "creator",
+      "write": "creator"
+    }
+  }
+}
